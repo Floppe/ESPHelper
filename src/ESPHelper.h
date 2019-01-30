@@ -98,6 +98,11 @@ public:
 	bool setCallback(MQTT_CALLBACK_SIGNATURE);
 	void setMQTTCallback(MQTT_CALLBACK_SIGNATURE);
 
+	void OTA_OnStart(ArduinoOTAClass::THandlerFunction);
+	void OTA_OnProgress(ArduinoOTAClass::THandlerFunction_Progress);
+	void OTA_OnEnd(ArduinoOTAClass::THandlerFunction);
+	void OTA_OnError(ArduinoOTAClass::THandlerFunction_Error);
+
 	void setWifiCallback(void (*callback)());
 
 	void reconnect();
@@ -177,6 +182,11 @@ private:
 
 	void (*_wifiCallback)();
 	bool _wifiCallbackSet = false;
+
+	ArduinoOTAClass::THandlerFunction _otaOnStartCallback = NULL;
+	ArduinoOTAClass::THandlerFunction_Progress _otaOnProgressCallback = NULL;
+	ArduinoOTAClass::THandlerFunction _otaOnEndCallback = NULL;
+	ArduinoOTAClass::THandlerFunction_Error _otaOnErrorCallback = NULL;
 
 	#ifdef ESP8266
 		std::function<void(char*, uint8_t*, unsigned int)> _mqttCallback;

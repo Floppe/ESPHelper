@@ -95,7 +95,7 @@ ESPHelper::ESPHelper(const char* configFile){
 //initialize the netinfo data and reset wifi. set hopping and OTA to off
 void ESPHelper::init(const char *ssid, const char *pass, const char *mqttIP, const char *mqttUser, const char *mqttPass, const int mqttPort, const char *willTopic, const char *willMessage, const int willQoS, const int willRetain){
 	//diconnect from and previous wifi networks
-    WiFi.softAPdisconnect();
+	WiFi.softAPdisconnect();
 	WiFi.disconnect();
 
 	_currentNet.ssid = ssid;
@@ -217,8 +217,17 @@ bool ESPHelper::begin(){
 
 
 		//ota event handlers
-		ArduinoOTA.onStart([]() {/* ota start code */});
-		ArduinoOTA.onEnd([]() {
+		ArduinoOTA.onStart([&]() {
+			if (_otaOnStartCallback != NULL) {
+				_otaOnStartCallback();
+			}
+		});
+
+		ArduinoOTA.onEnd([&]() {
+			if (_otaOnEndCallback != NULL) {
+				_otaOnEndCallback();
+			}
+
 			//on ota end we disconnect from wifi cleanly before restarting.
 			WiFi.softAPdisconnect();
 			WiFi.disconnect();
@@ -229,8 +238,18 @@ bool ESPHelper::begin(){
 				timeout++;
 			}
 		});
-		ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {/* ota progress code */});
-		ArduinoOTA.onError([](ota_error_t error) {/* ota error code */});
+		ArduinoOTA.onProgress([&](unsigned int progress, unsigned int total) {
+			/* ota progress code */
+			if (_otaOnProgressCallback != NULL) {
+				_otaOnProgressCallback(progress, total);
+			}
+		});
+		ArduinoOTA.onError([&](ota_error_t error) {
+			/* ota error code */
+			if (_otaOnErrorCallback != NULL) {
+				_otaOnErrorCallback(error);
+			}
+		});
 
 		//initially attempt to connect to wifi when we begin (but only block for 2 seconds before timing out)
 		int timeout = 0;	//counter for begin connection attempts
@@ -531,8 +550,25 @@ bool ESPHelper::setCallback(MQTT_CALLBACK_SIGNATURE){
 	return true;
 }
 
+// wrapper for OTA callbacks
+void ESPHelper::OTA_OnStart(ArduinoOTAClass::THandlerFunction callback){
+	_otaOnStartCallback = callback;
+}
 
+// wrapper for OTA callbacks
+void ESPHelper::OTA_OnProgress(ArduinoOTAClass::THandlerFunction_Progress callback){
+	_otaOnProgressCallback = callback;
+}
 
+// wrapper for OTA callbacks
+void ESPHelper::OTA_OnEnd(ArduinoOTAClass::THandlerFunction callback){
+	_otaOnEndCallback = callback;
+}
+
+// wrapper for OTA callbacks
+void ESPHelper::OTA_OnError(ArduinoOTAClass::THandlerFunction_Error callback){
+	_otaOnErrorCallback = callback;
+}
 
 //sets a custom function to run when connection to wifi is established
 void ESPHelper::setWifiCallback(void (*callback)()){
