@@ -1,6 +1,6 @@
 /*
     ESPHelper.h
-    Copyright (c) 2017 ItKindaWorks Inc All right reserved.
+    Copyright (c) 2019 ItKindaWorks Inc All right reserved.
     github.com/ItKindaWorks
 
     This file is part of ESPHelper
@@ -24,16 +24,24 @@
 #ifndef ESP_HELPER_H
 #define ESP_HELPER_H
 
+#ifdef ESP32
+#include <ESPmDNS.h>
+#include <WiFi.h>
+#endif
+
+
+#ifdef ESP8266
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
-
 #include <WiFiUdp.h>
+#endif
+
+
 #include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <WiFiClientSecure.h>
+
 #include "sharedData.h"
-
-
 #include "Metro.h"
 
 // #define VERSION "1-5-6"
@@ -104,6 +112,7 @@ public:
 	void OTA_OnError(ArduinoOTAClass::THandlerFunction_Error);
 
 	void setWifiCallback(void (*callback)());
+	void setWifiLostCallback(void (*callback)());
 
 	void reconnect();
 
@@ -183,17 +192,22 @@ private:
 	void (*_wifiCallback)();
 	bool _wifiCallbackSet = false;
 
+	void (*_wifiLostCallback)();
+	bool _wifiLostCallbackSet = false;
+
 	ArduinoOTAClass::THandlerFunction _otaOnStartCallback = NULL;
 	ArduinoOTAClass::THandlerFunction_Progress _otaOnProgressCallback = NULL;
 	ArduinoOTAClass::THandlerFunction _otaOnEndCallback = NULL;
 	ArduinoOTAClass::THandlerFunction_Error _otaOnErrorCallback = NULL;
 
-	#ifdef ESP8266
-		std::function<void(char*, uint8_t*, unsigned int)> _mqttCallback;
-	#endif
-	#ifdef ESP32
-		void(*_mqttCallback)(char*, uint8_t*, unsigned int) ;
-	#endif
+	std::function<void(char*, uint8_t*, unsigned int)> _mqttCallback;
+// #ifdef ESP8266
+// 	std::function<void(char*, uint8_t*, unsigned int)> _mqttCallback;
+// #endif
+// #ifdef ESP32
+// 	void(*_mqttCallback)(char*, uint8_t*, unsigned int) ;
+// #endif
+
 	bool _mqttCallbackSet = false;
 
 	int _connectionStatus = NO_CONNECTION;

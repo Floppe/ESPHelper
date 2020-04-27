@@ -1,4 +1,4 @@
-/*    
+/*
 ESPHelperWebConfig.cpp
 Copyright (c) 2017 ItKindaWorks All right reserved.
 github.com/ItKindaWorks
@@ -21,17 +21,30 @@ along with ESPHelper.  If not, see <http://www.gnu.org/licenses/>.
 #include "ESPHelperWebConfig.h"
 #include "FS.h"
 
+#ifdef ESP32
+#include "SPIFFS.h"
+#endif
+
 ESPHelperWebConfig::ESPHelperWebConfig(int port, const char* URI) : _localServer(port){
   _server = &_localServer;
   _runningLocal = true;
   _pageURI = URI;
 }
 
+#ifdef ESP8266
 ESPHelperWebConfig::ESPHelperWebConfig(ESP8266WebServer *server, const char* URI){
   _server = server;
   _runningLocal = false;
   _pageURI = URI;
 }
+#endif
+#ifdef ESP32
+ESPHelperWebConfig::ESPHelperWebConfig(WebServer *server, const char* URI){
+  _server = server;
+  _runningLocal = false;
+  _pageURI = URI;
+}
+#endif
 
 bool ESPHelperWebConfig::begin(const char* _hostname){
   MDNS.begin(_hostname);
@@ -48,7 +61,7 @@ bool ESPHelperWebConfig::begin(){
 
   if(_runningLocal){
     _server->begin(); // Actually start the server
-  }  
+  }
 
 
 	return true;
@@ -72,12 +85,15 @@ netInfo ESPHelperWebConfig::getConfig(){
 
 
 
+
 //main config page that allows user to enter in configuration info
 void ESPHelperWebConfig::handleGet() {
   String showReset;
 
   if(_resetSet){
-    showReset = "</br></br></br></br></br><form action=\"/reset\" method=\"POST\">\
+    showReset = "<center>\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no\"/>\
+    </br></br></br></br></br><form action=\"/reset\" method=\"POST\">\
     <input type=\"submit\" value=\"Click Here to Reset ESP Filesystem\"> (WARNING: Deletes all files on device!)</form>";
   }
   else{
@@ -86,43 +102,78 @@ void ESPHelperWebConfig::handleGet() {
 
 
   if(_preFill){
-    _server->send(200, "text/html", 
-    String("<form action=\"" + String(_pageURI) + "\" method=\"POST\">\
-    <input type=\"text\" name=\"hostname\" size=\"64\" maxlength=\"63\" placeholder=\"Device Hostname  (Required)\" value=\"" + String(_fillData->hostname) + "\"></br>\
-    <input type=\"text\" name=\"ssid\" size=\"64\" maxlength=\"63\" placeholder=\"SSID  (Required)\" value=\"" + String(_fillData->ssid) + "\"></br>\
-    <input type=\"password\" name=\"netPass\" size=\"64\" maxlength=\"63\" placeholder=\"Network Password (Previous value used if blank)\"></br>\
-    <input type=\"password\" name=\"otaPassword\" size=\"64\" maxlength=\"63\" placeholder=\"OTA Password (Previous value used if blank)\"></br>\
-    <input type=\"text\" name=\"mqttHost\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Host\" value=\"" + String(_fillData->mqttHost) + "\"></br>\
-    <input type=\"text\" name=\"mqttUser\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Username\" value=\"" + String(_fillData->mqttUser) + "\"></br>\
-    <input type=\"text\" name=\"mqttPort\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Port\" value=\"" + String(_fillData->mqttPort) + "\"></br>\
-    <input type=\"password\" name=\"mqttPass\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Password (Previous value used if blank)\"></br>\
+    _server->send(200, "text/html",
+    String("<header>\
+  	<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no\"/>\
+  	<title>Sistem configuration</title>\
+  	<style body=\"text-align:center;\"font-family:verdana;\"></style>\
+  	</header>\
+  	<body style=\"background-color:#00dfff;\"><font style=\"font-family:verdana;\">\
+    <center>\
+    <h3 style=\"text-align:center;\"><span style=\"color:#0a4f75;\"><strong>ESP8266 System Configuration</strong></span></h3>\
+    <hr />\
+    <form action=\"" + String(_pageURI) + "\" method=\"POST\">\
+    Device Name:</br>\
+    <input type=\"text\" name=\"hostname\" size=\"45\" maxlength=\"63\" placeholder=\"Device Hostname  (Required)\" value=\"" + String(_fillData->hostname) + "\"></br>\
+    SSID:</br>\
+    <input type=\"text\" name=\"ssid\" size=\"45\" maxlength=\"63\" placeholder=\"SSID  (Required)\" value=\"" + String(_fillData->ssid) + "\"></br>\
+    SSIS Password:</br>\
+    <input type=\"password\" name=\"netPass\" size=\"45\" maxlength=\"63\" placeholder=\"Network Password (Previous value used if blank)\"></br>\
+    OTA Password:</br>\
+    <input type=\"password\" name=\"otaPassword\" size=\"45\" maxlength=\"63\" placeholder=\"OTA Password (Previous value used if blank)\"></br>\
+    MQTT Host (IP):</br>\
+    <input type=\"text\" name=\"mqttHost\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Host\" value=\"" + String(_fillData->mqttHost) + "\"></br>\
+    MQTT User:</br>\
+    <input type=\"text\" name=\"mqttUser\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Username\" value=\"" + String(_fillData->mqttUser) + "\"></br>\
+    MQTT Port:</br>\
+    <input type=\"text\" name=\"mqttPort\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Port\" value=\"" + String(_fillData->mqttPort) + "\"></br>\
+    MQTT Password:</br>\
+    <input type=\"password\" name=\"mqttPass\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Password (Previous value used if blank)\"></br>\
+    <p>Press Submit to update ESP8266 config file</br>\
     <input type=\"submit\" value=\"Submit\"></form>\
-    <p>Press Submit to update ESP8266 config file</p>" + showReset));
+    <p font-size=\"font-size:1.2;\"><a href=" + String("/") + ">Go to Device Status Page</a></p>" + showReset));
   }
 
 
 
   else{
-    _server->send(200, "text/html", 
-    String("<form action=\"" + String(_pageURI) + "\" method=\"POST\">\
-    <input type=\"text\" name=\"hostname\" size=\"64\" maxlength=\"63\" placeholder=\"Device Hostname  (Required)\"></br>\
-    <input type=\"text\" name=\"ssid\" size=\"64\" maxlength=\"63\" placeholder=\"SSID  (Required)\"></br>\
-    <input type=\"password\" name=\"netPass\" size=\"64\" maxlength=\"63\" placeholder=\"Network Password\"></br>\
-    <input type=\"password\" name=\"otaPassword\" size=\"64\" maxlength=\"63\" placeholder=\"OTA Password\"></br>\
-    <input type=\"text\" name=\"mqttHost\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Host\"></br>\
-    <input type=\"text\" name=\"mqttUser\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Username\"></br>\
-    <input type=\"text\" name=\"mqttPort\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Port\"></br>\
-    <input type=\"password\" name=\"mqttPass\" size=\"64\" maxlength=\"63\" placeholder=\"MQTT Password\"></br>\
-    <input type=\"submit\" value=\"Submit\"></form>\
-    <p>Press Submit to update ESP8266 config file</p>" + showReset));
+    _server->send(200, "text/html",
+    String("<header>\
+  	<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no\"/>\
+  	<title>Sistem configuration</title>\
+  	<style body=\"text-align:center;\"font-family:verdana;\"></style>\
+  	</header>\
+  	<body style=\"background-color:#00dfff;\"><font style=\"font-family:verdana;\">\
+    <center>\
+    <h3 style=\"text-align:center;\"><span style=\"color:#0a4f75;\"><strong>ESP8266 System Configuration</strong></span></h3>\
+    <hr />\
+    <form action=\"" + String(_pageURI) + "\" method=\"POST\">\
+    Device Name:</br>\
+    <input type=\"text\" name=\"hostname\" size=\"45\" maxlength=\"63\" placeholder=\"Device Hostname  (Required)\"></br>\
+    SSID:</br>\
+    <input type=\"text\" name=\"ssid\" size=\"45\" maxlength=\"63\" placeholder=\"SSID  (Required)\"></br>\
+    SSIS Password:</br>\
+    <input type=\"password\" name=\"netPass\" size=\"45\" maxlength=\"63\" placeholder=\"Network Password\"></br>\
+    OTA Password:</br>\
+    <input type=\"password\" name=\"otaPassword\" size=\"45\" maxlength=\"63\" placeholder=\"OTA Password\"></br>\
+    MQTT Host (IP):</br>\
+    <input type=\"text\" name=\"mqttHost\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Host\"></br>\
+    MQTT User:</br>\
+    <input type=\"text\" name=\"mqttUser\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Username\"></br>\
+    MQTT Port:</br>\
+    <input type=\"text\" name=\"mqttPort\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Port\"></br>\
+    MQTT Password:</br>\
+    <input type=\"password\" name=\"mqttPass\" size=\"45\" maxlength=\"63\" placeholder=\"MQTT Password\"></br>\
+    <p>Press Submit to update ESP8266 config file</p>\
+    <input type=\"submit\" value=\"Submit\"></form>" + showReset));
   }
-  
+
 }
 
 // If a POST request is made to URI /config
-void ESPHelperWebConfig::handlePost() {   
+void ESPHelperWebConfig::handlePost() {
 
-  //make sure that all the arguments exist and that at least an SSID and hostname have been entered                      
+  //make sure that all the arguments exist and that at least an SSID and hostname have been entered
   if( ! _server->hasArg("ssid") || ! _server->hasArg("netPass")
       || ! _server->hasArg("hostname") || ! _server->hasArg("mqttHost")
       || ! _server->hasArg("mqttUser") || ! _server->hasArg("mqttPass")
@@ -134,15 +185,21 @@ void ESPHelperWebConfig::handlePost() {
   }
 
   //if there is an mqtt user/pass/port entered then there better also be a host!
-  if((_server->arg("mqttUser") != NULL || _server->arg("mqttPass") != NULL) && _server->arg("mqttHost") == NULL){
+  if((_server->arg("mqttUser") != NULL || _server->arg("mqttPass") != NULL ||
+   _server->arg("mqttPort") != NULL) && _server->arg("mqttHost") == NULL){
 
-    _server->send(400, "text/plain", "400: Invalid Request - MQTT info specified without host");  // The request is invalid, so send HTTP status 400
+   _server->send(400, "text/html",
+   String("<center>\
+   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no\"/>\
+   <p><strong>400: Invalid Request - MQTT info specified without host</strong></p>\
+   <hr />\
+   <p><a href=" + String("config") + ">Open configuration page</a></p>"));
     return;
   }
 
 
   //convert the Strings returned by _server->arg to char arrays that can be entered into netInfo
-  
+
 
   //network pass
   if(_preFill && _server->arg("netPass").length() == 0){
@@ -150,7 +207,7 @@ void ESPHelperWebConfig::handlePost() {
     _newNetPass[sizeof(_newNetPass) - 1] = '\0';
   }
   else{_server->arg("netPass").toCharArray(_newNetPass, sizeof(_newNetPass));}
-  
+
   //mqtt pass
   if(_preFill && _server->arg("mqttPass").length() == 0){
     strncpy(_newMqttPass,_fillData->mqttPass,64);
@@ -164,7 +221,7 @@ void ESPHelperWebConfig::handlePost() {
     _newOTAPass[sizeof(_newNetPass) - 1] = '\0';
   }
   else{_server->arg("otaPassword").toCharArray(_newOTAPass, sizeof(_newOTAPass));}
-    
+
   //other non protected vars
   _server->arg("ssid").toCharArray(_newSsid, sizeof(_newSsid));
   _server->arg("hostname").toCharArray(_newHostname, sizeof(_newHostname));
@@ -172,20 +229,26 @@ void ESPHelperWebConfig::handlePost() {
   _server->arg("mqttUser").toCharArray(_newMqttUser, sizeof(_newMqttUser));
 
   //the port is special because it doesnt get stored as a string so we take care of that
-  
+
   if(_server->arg("mqttPort") != NULL){_newMqttPort = _server->arg("mqttPort").toInt();}
   else{_newMqttPort = 1883;}
 
 
   //tell the user that the config is loaded in and the module is restarting
-  _server->send(200, "text/plain", "Config Info Loaded");
+  _server->send(200, "text/html",
+    String("<center>\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no\"/>\
+    <p><strong>Config info loaded</strong></p>\
+    <hr />\
+    <p><a href=" + String("config") + ">Open configuration page</a></p>\
+    <p>Wait for the ESP8266 to restart with the new settings</p>"));
 
-  //enter in the new data 
-  _config = {mqttHost : _newMqttHost,     
-             mqttUser : _newMqttUser,   
-             mqttPass : _newMqttPass,   
+  //enter in the new data
+  _config = {mqttHost : _newMqttHost,
+             mqttUser : _newMqttUser,
+             mqttPass : _newMqttPass,
              mqttPort : _newMqttPort,
-             ssid : _newSsid, 
+             ssid : _newSsid,
              pass : _newNetPass,
              otaPassword : _newOTAPass,
              hostname : _newHostname};

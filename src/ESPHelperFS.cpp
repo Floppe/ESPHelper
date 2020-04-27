@@ -1,6 +1,6 @@
-/*    
+/*
 ESPHelperFS.cpp
-Copyright (c) 2017 ItKindaWorks All right reserved.
+Copyright (c) 2019 ItKindaWorks All right reserved.
 github.com/ItKindaWorks
 
 This file is part of ESPHelper
@@ -21,18 +21,39 @@ along with ESPHelper.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "ESPHelperFS.h"
 
-// StaticJsonBuffer<JSON_SIZE>* ESPHelperFS::_tmpBufPtr = NULL;
 
 
+/*
+empty constructor (will assume a file named "/netConfig.json")
+
+input: NA
+output:NA
+*/
 ESPHelperFS::ESPHelperFS() : _filename("/netConfig.json"){
   _networkData = defaultConfig;
 }
 
+
+/*
+constructor with a filename
+
+input: char ptr to a filename to use for loading ESPHelper config data
+output: NA
+*/
 ESPHelperFS::ESPHelperFS(const char* filename){
   _filename = filename;
   _networkData = defaultConfig;
 }
 
+
+/*
+starts the filesystem
+
+input: NA
+output:
+  true on sucessful loading of the FS
+  false on failure to load the FS (usually because of corruption or unformatted partition)
+*/
 bool ESPHelperFS::begin(){
   //load the config file
   if (SPIFFS.begin()) {
@@ -43,18 +64,40 @@ bool ESPHelperFS::begin(){
   return false;
 }
 
+
+/*
+shuts down the filesystem
+
+input: NA
+output: NA
+*/
 void ESPHelperFS::end(){
   FSdebugPrintln("Filesystem Unloaded");
   SPIFFS.end();
 }
 
 
+/*
+prints the contents of a file to the debugger
 
-
+input: NA
+output: NA (serial printing)
+*/
 void ESPHelperFS::printFile(){
+    printFile(_filename);
+}
+
+
+/*
+prints the contents of a file to the debugger
+
+input: NA
+output: NA (serial printing)
+*/
+void ESPHelperFS::printFile(const char* filename){
   // this opens the file "f.txt" in read-mode
-  File f = SPIFFS.open(_filename, "r");
-  
+  File f = SPIFFS.open(filename, "r");
+
   if(f) {
     // we could open the file
     while(f.available()) {
@@ -68,8 +111,14 @@ void ESPHelperFS::printFile(){
 }
 
 
+/*
+debug utility to print out data about the FS
 
+input: NA
+output: NA (serial printing)
+*/
 void ESPHelperFS::printFSinfo(){
+#ifdef ESP8266
   FSInfo fs_info;
   SPIFFS.info(fs_info);
   FSdebugPrint("total bytes: ");
@@ -84,20 +133,37 @@ void ESPHelperFS::printFSinfo(){
   FSdebugPrintln(fs_info.maxOpenFiles);
   FSdebugPrint("max path length: ");
   FSdebugPrintln(fs_info.maxPathLength);
+#endif
+#ifdef ESP32
+  FSdebugPrint("total bytes: ");
+  FSdebugPrintln(SPIFFS.totalBytes);
+  FSdebugPrint("used bytes: ");
+  FSdebugPrintln(SPIFFS.usedBytes);
+#endif
 }
 
 
-//load the file from FS into var buf
-bool ESPHelperFS::loadFile(const char* filename, std::unique_ptr<char[]> &buf){
+/*
+loads a JSON file from FS into buffer
+
+input:
+  char ptr to a filename that should be loaded
+  JsonDocument ptr to be used as a buffer for the loaded file
+output:
+  true on successful loading of file and parsing into JSON
+  false if any of the loading/parsing process fails (generally due to corrupt data or improper JSON)
+*/
+bool ESPHelperFS::loadFile(const char* filename, JsonDocument* buffer){
 
   FSdebugPrint("Opening File: ");
   FSdebugPrintln(filename);
   //open file as read only
   File configFile = SPIFFS.open(filename, "r");
 
+
   //check to make sure opening was possible
   if (!configFile) {
-    FSdebugPrintln("Failed to open config file");
+    FSdebugPrintln("Failed to open config file - returning false");
     configFile.close();
     return false;
   }
@@ -107,50 +173,49 @@ bool ESPHelperFS::loadFile(const char* filename, std::unique_ptr<char[]> &buf){
   size_t size = configFile.size();
   FSdebugPrint("JSON File Size: ");
   FSdebugPrintln(size);
-  if (size > JSON_SIZE) { 
-    FSdebugPrintln("JSON File too large - returning"); 
+  if (size > JSON_SIZE) {
+    FSdebugPrintln("JSON File too large - returning false");
     return false;
   }
 
-  // Allocate a buffer to store contents of the file.
-  std::unique_ptr<char[]> newBuf(new char[size]);
-
-  // We don't use String here because ArduinoJson library requires the input
-  // buffer to be mutable. If you don't use ArduinoJson, you may as well
-  // use configFile.readString instead.
-  configFile.readBytes(newBuf.get(), size);
-
-  //move the contents of newBuf into buf
-  buf = std::move(newBuf);
+  DeserializationError error = deserializeJson(*buffer, configFile);
+  if(error && size != 0){
+      FSdebugPrintln("JSON File corrupt/could not be deserialized - returning false");
+      return false;
+  }
 
   //close out the file
   configFile.close();
 
   //sucess return true
   return true;
-  
+
 }
 
+
+/*
+attempts to validate a config file for ESPHelper.
+
+input: 
+  char ptr to a filename where the config should be stored
+output:
+  signed int8 (see validateStates enum in ESPHelperFS.h)
+*/
 int8_t ESPHelperFS::validateConfig(const char* filename){
-  
-  //create a buffer for the file data
-  std::unique_ptr<char[]> buf(new char[JSON_SIZE]);
-  loadFile(filename, buf);
-  StaticJsonBuffer<JSON_SIZE> jsonBuffer;
-  JsonObject& json = jsonBuffer.parseObject(buf.get());
+
+
+
+  StaticJsonDocument<JSON_SIZE> jsonBuffer;
+  if(!loadFile(filename, &jsonBuffer)){return CANNOT_PARSE;}
+  JsonObject json = jsonBuffer.as<JsonObject>();
+
+
   if(json.size() == 0){ return NO_CONFIG;}
 
-  //return false if the file could not be parsed
-  if (!json.success()) {
-    FSdebugPrintln("JSON File corrupt");
-    
-    return CANNOT_PARSE;
-  }
-
   //check to make sure all netInfo keys exist
-  if(!json.containsKey("ssid") 
-    || !json.containsKey("networkPass") 
-    || !json.containsKey("mqttIP") 
+  if(!json.containsKey("ssid")
+    || !json.containsKey("networkPass")
+    || !json.containsKey("mqttIP")
     || !json.containsKey("mqttUSER")
     || !json.containsKey("mqttPASS")
     || !json.containsKey("mqttPORT")
@@ -162,12 +227,21 @@ int8_t ESPHelperFS::validateConfig(const char* filename){
     || !json.containsKey("willRetain")){
 
     FSdebugPrintln("Config incomplete");
-    
+
     return INCOMPLETE;
   }
   return GOOD_CONFIG;
 }
 
+
+/*
+loads the file on record from the FS
+
+input: NA
+output:
+  true on sucessful loading/parsing of the file
+  false on failed load/parse. 
+*/
 bool ESPHelperFS::loadNetworkConfig(){
 
   //validate that the config file is good and if not create a new one
@@ -178,11 +252,10 @@ bool ESPHelperFS::loadNetworkConfig(){
 
 
   else{
-    //create a buffer for the file data
-    std::unique_ptr<char[]> buf(new char[JSON_SIZE]);
-    loadFile(_filename, buf);
-    StaticJsonBuffer<JSON_SIZE> jsonBuffer;
-    JsonObject& json = jsonBuffer.parseObject(buf.get());
+
+      StaticJsonDocument<JSON_SIZE> jsonBuffer;
+      if(!loadFile(_filename, &jsonBuffer)){return false;}
+      JsonObject json = jsonBuffer.as<JsonObject>();
 
 
     //copy the keys into char arrays
@@ -217,8 +290,8 @@ bool ESPHelperFS::loadNetworkConfig(){
                     willQoS : numQoS,
                     willRetain : numRetain};
 
-    
-                    
+
+
     FSdebugPrintln("Reading config file with values: ");
     FSdebugPrint("MQTT Server: ");
     FSdebugPrintln(_networkData.mqttHost);
@@ -248,12 +321,21 @@ bool ESPHelperFS::loadNetworkConfig(){
     // configFile.close();
   }
 
-  
+
   return true;
 }
 
 
-//add a key to a json file
+/*
+add a key to the stored json filename
+
+input:
+  char ptr to the key name
+  char ptr to the data to be stored in that key
+output:
+  true on sucessful addition of the key
+  false on failure to add key (either because the file does not exist/not set or because JSON file size/corruption issues)
+*/
 bool ESPHelperFS::addKey(const char* keyName, const char* value){
   if(_filename != ""){
     return addKey(keyName, value, _filename);
@@ -261,51 +343,67 @@ bool ESPHelperFS::addKey(const char* keyName, const char* value){
   else{return false;}
 }
 
-//add a key to a json file
+
+/*
+add a key to a json file (will create file if it does not already exist)
+
+input:
+  char ptr to the key name
+  char ptr to the data to be stored in that key
+  char ptr to the filename of where to add the key
+output:
+  true on sucessful addition of the key
+  false on failure to add key (either because the file does not exist or because JSON file size/corruption issues)
+*/
 bool ESPHelperFS::addKey(const char* keyName, const char* value, const char* filename){
+
+  //if the file does not exist open the file for writing (create it) and then close it.
   if(!SPIFFS.exists(filename)){
     File configFile = SPIFFS.open(filename, "w");
     configFile.close();
   }
 
-  //create a buffer for the file data
-  std::unique_ptr<char[]> buf(new char[JSON_SIZE]);
-  loadFile(filename, buf);
-  StaticJsonBuffer<JSON_SIZE> jsonBuffer;
-  JsonObject& json = jsonBuffer.parseObject(buf.get());
-  if(json.success()){
+  //load the file
+  StaticJsonDocument<JSON_SIZE> jsonBuffer;
+  loadFile(filename, &jsonBuffer);
+  JsonObject json = jsonBuffer.as<JsonObject>();
+
+  if(!json.isNull()){
     //add the key to the json object
-    json[keyName] = value;
+    jsonBuffer[keyName] = value;
     FSdebugPrint("Added Key ");
     FSdebugPrint(keyName);
     FSdebugPrint(" With Value ");
     FSdebugPrintln(value);
 
     //save the new config with added key
-    saveConfig(json, filename);
+    saveConfig(jsonBuffer, filename);
     return true;
   }
 
 
-  StaticJsonBuffer<JSON_SIZE> blankBuffer;
-  JsonObject& blankJson = blankBuffer.createObject();
-  if(blankJson.success()){
-    //add the key to the json object
-    blankJson[keyName] = value;
-    FSdebugPrint("Added Key ");
-    FSdebugPrint(keyName);
-    FSdebugPrint(" With Value ");
-    FSdebugPrintln(value);
+  StaticJsonDocument<JSON_SIZE> blankBuffer;
+  //add the key to the json object
+  blankBuffer[keyName] = value;
+  FSdebugPrint("Added Key ");
+  FSdebugPrint(keyName);
+  FSdebugPrint(" With Value ");
+  FSdebugPrintln(value);
 
-    //save the new config with added key
-    saveConfig(blankJson, filename);
-    return true;
-  }
-    
-  return false;
+  //save the new config with added key
+  saveConfig(blankBuffer, filename);
+  return true;
 }
 
-//read a key from a json file
+
+/*
+read a key from the stored json filename
+
+input:
+  char ptr to the key name to be loaded
+output:
+  String holding the data stored in the key (blank string on failure to load)
+*/
 String ESPHelperFS::loadKey(const char* keyName){
   if(_filename != ""){
     return loadKey(keyName, _filename);
@@ -313,21 +411,30 @@ String ESPHelperFS::loadKey(const char* keyName){
   else {return String();}
 }
 
-//read a key from a json file
+
+/*
+read a key from a json file
+
+input:
+  char ptr to the key name to be loaded
+  char ptr to the filename where the key is stored
+output:
+  String holding the data stored in the key (blank string on failure to load)
+*/
 String ESPHelperFS::loadKey(const char* keyName, const char* filename){
   static String returnString = "";
+  
+  returnString = "";
 
-  //create a buffer for the file data
-  std::unique_ptr<char[]> buf(new char[JSON_SIZE]);
-  loadFile(filename, buf);
-  StaticJsonBuffer<JSON_SIZE> jsonBuffer;
-  JsonObject& json = jsonBuffer.parseObject(buf.get());
-  if(json.success()){
+  StaticJsonDocument<JSON_SIZE> jsonBuffer;
+  if(!loadFile(filename, &jsonBuffer)){return returnString;}
+  JsonObject json = jsonBuffer.as<JsonObject>();
+  if(!json.isNull()){
 
     //if the key does not exist then return an empty string
     if(!json.containsKey(keyName)){
       FSdebugPrintln("Key not found");
-      
+
       return returnString;
     }
 
@@ -335,29 +442,41 @@ String ESPHelperFS::loadKey(const char* keyName, const char* filename){
     returnString = (const char*)json[keyName];
   }
 
-  
+
   //return the key (blank if file could not be opened)
   return returnString;
 }
 
 
+/*
+returns the netInfo that stores the config loaded from the FS
 
-
-
-
-
+input: NA
+output:
+  netInfo instance with the currently loaded config 
+*/
 netInfo ESPHelperFS::getNetInfo(){
   return _networkData;
 }
 
+
+/*
+(wrapper) creates a new default value config file at the specified location/filename
+
+input:
+  char ptr to the filename where the new config should be stored
+output: 
+  true on sucessful file save
+  false on failure to save. false on file already existing as well because this will not overwrite
+*/
 bool ESPHelperFS::createConfig(const char* filename){
   return createConfig(_filename,
-                      defaultConfig.ssid, 
-                      defaultConfig.pass, 
-                      defaultConfig.hostname, 
-                      defaultConfig.mqttHost,  
-                      defaultConfig.mqttUser, 
-                      defaultConfig.mqttPass, 
+                      defaultConfig.ssid,
+                      defaultConfig.pass,
+                      defaultConfig.hostname,
+                      defaultConfig.mqttHost,
+                      defaultConfig.mqttUser,
+                      defaultConfig.mqttPass,
                       defaultConfig.mqttPort,
                       defaultConfig.otaPassword,
                       defaultConfig.willTopic,
@@ -367,14 +486,23 @@ bool ESPHelperFS::createConfig(const char* filename){
 }
 
 
+/*
+(wrapper) creates a new config file at the stored location/filename from the specified netInfo
+
+input:
+  netInfo ptr to a config to be saved
+output: 
+  true on sucessful file save
+  false on failure to save. false on file already existing as well because this will not overwrite
+*/
 bool ESPHelperFS::createConfig(const netInfo* config){
   return createConfig(_filename,
-                      config->ssid, 
-                      config->pass, 
-                      config->hostname, 
-                      config->mqttHost,  
-                      config->mqttUser, 
-                      config->mqttPass, 
+                      config->ssid,
+                      config->pass,
+                      config->hostname,
+                      config->mqttHost,
+                      config->mqttUser,
+                      config->mqttPass,
                       config->mqttPort,
                       config->otaPassword,
                       config->willTopic,
@@ -383,14 +511,25 @@ bool ESPHelperFS::createConfig(const netInfo* config){
                       config->willRetain);
 }
 
+
+/*
+(wrapper) creates a new config file at the specified location/filename from the specified netInfo
+
+input:
+  netInfo ptr to a config to be saved
+  char ptr to the filename where the new config should be stored
+output: 
+  true on sucessful file save
+  false on failure to save. false on file already existing as well because this will not overwrite
+*/
 bool ESPHelperFS::createConfig(const netInfo* config, const char* filename){
   return createConfig(filename,
-                      config->ssid, 
-                      config->pass, 
-                      config->hostname, 
-                      config->mqttHost,  
-                      config->mqttUser, 
-                      config->mqttPass, 
+                      config->ssid,
+                      config->pass,
+                      config->hostname,
+                      config->mqttHost,
+                      config->mqttUser,
+                      config->mqttPass,
                       config->mqttPort,
                       config->otaPassword,
                       config->willTopic,
@@ -399,10 +538,32 @@ bool ESPHelperFS::createConfig(const netInfo* config, const char* filename){
                       config->willRetain);
 }
 
+
+/*
+creates a new configuration file from the specified parameters at a specified filename/location
+
+input:
+  char ptr to the filename/location to save the file
+  char ptr to the SSID to be saved
+  char ptr to the network password to be saved
+  char ptr to the device name to be saved
+  char ptr to the MQTT IP/hostname to be saved
+  char ptr to the MQTT username to be saved
+  char ptr to the MQTT password to be saved
+  int for the MQTT port to be saved
+  char ptr to the OTA password to be saved
+  char ptr to the MQTT will topic to be saved
+  char ptr to the MQTT will message to be saved
+  int for the MQTT will QOS to be saved
+  int to the MQTT will retained value to be saved
+output:
+  true on sucessful file save
+  false on failure to save. false on file already existing as well because this will not overwrite
+*/
 bool ESPHelperFS::createConfig( const char* filename,
-                                const char* _ssid, 
-                                const char* _networkPass, 
-                                const char* _deviceName, 
+                                const char* _ssid,
+                                const char* _networkPass,
+                                const char* _deviceName,
                                 const char* _mqttIP,
                                 const char* _mqttUser,
                                 const char* _mqttPass,
@@ -450,33 +611,45 @@ bool ESPHelperFS::createConfig( const char* filename,
 
   FSdebugPrintln("creating json");
 
-  //create a buffer for the file data
-  std::unique_ptr<char[]> buf(new char[JSON_SIZE]);
-  loadFile(filename, buf);
-  StaticJsonBuffer<JSON_SIZE> jsonBuffer;
 
-  //if a json file already exists then use that as the base
-  JsonObject& json = validateConfig(filename) == GOOD_CONFIG ? jsonBuffer.parseObject(buf.get()) : jsonBuffer.createObject();
 
-  json["ssid"] = _ssid;
-  json["networkPass"] = _networkPass;
-  json["hostname"] = _deviceName;
-  json["mqttIP"] = _mqttIP;
-  json["mqttPORT"] = portString;
-  json["mqttUSER"] = _mqttUser;
-  json["mqttPASS"] = _mqttPass;
-  json["OTA_Password"] = _otaPass;
-  json["willTopic"] = _willTopic;
-  json["willMessage"] = _willMessage;
-  json["willQoS"] = qoSString;
-  json["willRetain"] = retainString;
+
+  StaticJsonDocument<JSON_SIZE> jsonBuffer;
+  // if(loadFile(filename, &jsonBuffer)){
+  //     FSdebugPrintln("File already exists - will not overwrite. No new file created. Exiting.");
+  //     return false;
+  // }
+
+  jsonBuffer["ssid"] = _ssid;
+  jsonBuffer["networkPass"] = _networkPass;
+  jsonBuffer["hostname"] = _deviceName;
+  jsonBuffer["mqttIP"] = _mqttIP;
+  jsonBuffer["mqttPORT"] = portString;
+  jsonBuffer["mqttUSER"] = _mqttUser;
+  jsonBuffer["mqttPASS"] = _mqttPass;
+  jsonBuffer["OTA_Password"] = _otaPass;
+  jsonBuffer["willTopic"] = _willTopic;
+  jsonBuffer["willMessage"] = _willMessage;
+  jsonBuffer["willQoS"] = qoSString;
+  jsonBuffer["willRetain"] = retainString;
 
   FSdebugPrintln("done");
 
-  return saveConfig(json, filename);
+  return saveConfig(jsonBuffer, filename);
 }
 
-bool ESPHelperFS::saveConfig(JsonObject& json, const char* filename) {
+
+/*
+saves a specified json file to a specified filename/location (will overwrite)
+
+input:
+  JsonDocument containing the json data to be saved
+  char ptr to the filename/location of the file to be saved
+output:
+  true on sucessful save
+  false on failure to save due to failure to open file for writing. Probably FS corruption
+*/
+bool ESPHelperFS::saveConfig(JsonDocument json, const char* filename) {
   FSdebugPrintln("Saving File...");
 
   if(SPIFFS.exists(filename)){
@@ -493,8 +666,9 @@ bool ESPHelperFS::saveConfig(JsonObject& json, const char* filename) {
   }
 
   FSdebugPrintln("File open now writing");
-  
-  json.printTo(configFile);
+
+  // json.printTo(configFile);
+  serializeJson(json, configFile);
 
   FSdebugPrintln("Writing done now closing");
 
@@ -503,6 +677,3 @@ bool ESPHelperFS::saveConfig(JsonObject& json, const char* filename) {
   FSdebugPrintln("done.");
   return true;
 }
-
-
-
